@@ -28,10 +28,11 @@ CodexでGitHubを接続し、作成したリポジトリを選択します。リ
 
 ```text
 このリポジトリを確認してください。AGENTS.mdに従い、
-1. python -m pytest -q を実行
-2. 失敗があれば原因を修正
-3. notebooks/keiba_colab.ipynb の導入手順とコードが一致しているか確認
-4. 変更内容とテスト結果を報告
+1. python -m pip install -e ".[dev]" を実行
+2. python -m pytest -q を実行
+3. 失敗があれば原因を修正
+4. notebooks/keiba_colab.ipynb の導入手順とコードが一致しているか確認
+5. 変更内容とテスト結果を報告
 してください。
 ```
 
@@ -44,6 +45,7 @@ GitHub上の `notebooks/keiba_colab.ipynb` をGoogle Colabで開きます。
 ```python
 GITHUB_REPO = "あなたのGitHubユーザー名/keiba-hybrid-system"
 GITHUB_BRANCH = "main"
+PRIVATE_REPO = False
 DRIVE_DATA_DIR = "/content/drive/MyDrive/keiba-ev-data"
 ```
 
