@@ -16,7 +16,7 @@
 
 ### 1. GitHubリポジトリを作る
 
-GitHubで空のリポジトリを作ります。推奨名は `keiba-hybrid-system` です。
+GitHubで空のリポジトリを作ります。このプロジェクトでは `keiba-analysis` を使います。
 
 このフォルダ一式をリポジトリへアップロードして、mainブランチへ保存します。個人の購入履歴はアップロードしないでください。
 
@@ -43,7 +43,7 @@ GitHub上の `notebooks/keiba_colab.ipynb` をGoogle Colabで開きます。
 ノートブックの最初の設定セルで、次を変更します。
 
 ```python
-GITHUB_REPO = "あなたのGitHubユーザー名/keiba-hybrid-system"
+GITHUB_REPO = "f94wzpjvr2-stack/keiba-analysis"
 GITHUB_BRANCH = "main"
 PRIVATE_REPO = False
 DRIVE_DATA_DIR = "/content/drive/MyDrive/keiba-ev-data"
