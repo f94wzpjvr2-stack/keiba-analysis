@@ -1,4 +1,6 @@
-import itertools, pandas as pd
+import itertools
+
+import pandas as pd
 
 def single_win_ev(h):
     out = h.copy()

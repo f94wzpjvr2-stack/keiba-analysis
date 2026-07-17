@@ -116,3 +116,8 @@ keiba-hybrid-system-v1/
 ├── src/keiba_ev/
 └── tests/
 ```
+
+## 過去JRAレースの自動収集
+
+`notebooks/historical_import_colab.ipynb` の1セルを実行すると、完了済みJRAレースをGoogle Driveへ保存します。保存先、項目、制約は `docs/HISTORICAL_IMPORT.md` を参照してください。予測前データとの混在を防ぐため、履歴は `historical_*.csv` に分離されます。
+

@@ -1,7 +1,16 @@
 import numpy as np
-import pandas as pd
 
-FEATURES = ["ability","suitability","pace","training","paddock","total_score","field_size","log_win_odds","market_prob"]
+FEATURES = [
+    "ability",
+    "suitability",
+    "pace",
+    "training",
+    "paddock",
+    "total_score",
+    "field_size",
+    "log_win_odds",
+    "market_prob",
+]
 
 def build_features(df):
     out = df.copy()
