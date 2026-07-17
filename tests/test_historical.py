@@ -41,6 +41,62 @@ SAMPLE_HTML = """
 """
 
 
+def complex_jra_html() -> str:
+    runner_rows = []
+    for horse_no in range(1, 17):
+        frame_no = (horse_no + 1) // 2
+        frame_cell = (
+            f'<td rowspan="2"><img class="waku_{frame_no}" '
+            f'src="/JRADB/img/waku{frame_no}.png" alt="枠{frame_no}"></td>'
+            if horse_no % 2 == 1
+            else ""
+        )
+        runner_rows.append(
+            "<tr>"
+            f"<td>{horse_no}</td>"
+            f"{frame_cell}"
+            f"<td>{horse_no}</td>"
+            f"<td>サンプル{horse_no:02d}</td>"
+            "<td>牡3</td><td>57.0</td><td>騎手</td>"
+            f"<td>1:{34 + horse_no:02d}.0</td><td></td><td>1-1</td>"
+            "<td>35.0</td><td>480(+0)</td><td>厩舎</td>"
+            f"<td>{horse_no}</td>"
+            "</tr>"
+        )
+    return f"""
+<html>
+<head><title>JRA レース結果 検索ウィンドウ</title></head>
+<body>
+<nav><a>払戻金</a><a>検索ウィンドウ</a></nav>
+<h1>レース結果 2026年5月23日（土曜）2回東京9日 11レース</h1>
+<h2>検索ウィンドウ</h2>
+<h3>欅ステークス</h3>
+<div>発走時刻：15時45分</div>
+<div>天候 晴</div><div>ダート 良</div>
+<p>コース：1,400メートル（ダート・左）</p>
+<table>
+<tr><th>着順</th><th>枠番</th><th>馬番</th><th>馬名</th><th>性齢</th><th>負担重量</th><th>騎手名</th><th>タイム</th><th>着差</th><th>コーナー通過順位</th><th>推定上り</th><th>馬体重（増減）</th><th>調教師名</th><th>単勝人気</th></tr>
+{''.join(runner_rows)}
+</table>
+<h2>払戻金</h2>
+<div>単勝</div><div>5</div><div>1,570円 7番人気</div>
+<div>複勝</div><div>5</div><div>360</div><div>円</div><div>7</div><div>番人気</div>
+<div>8</div><div>170円</div><div>2番人気</div>
+<div>12</div><div>240 円</div><div>4 番人気</div>
+<div>枠連</div><div>3-4</div><div>1,880円 8番人気</div>
+<div>ワイド</div><div>5-8</div><div>740</div><div>円</div><div>8</div><div>番人気</div>
+<div>5-12</div><div>1,320円 18番人気</div>
+<div>8-12</div><div>620 円</div><div>5 番人気</div>
+<div>馬連</div><div>5-8</div><div>3,120円 13番人気</div>
+<div>馬単</div><div>5-8</div><div>7,800</div><div>円</div><div>31</div><div>番人気</div>
+<div>3連複</div><div>5-8-12</div><div>5,640円 20番人気</div>
+<div>3連単</div><div>5-8-12</div><div>42,900</div><div>円</div><div>151</div><div>番人気</div>
+<h3>勝馬の紹介</h3>
+</body>
+</html>
+"""
+
+
 def test_parse_jra_result_html():
     parsed = parse_jra_result_html(SAMPLE_HTML, SAMPLE_URL)
     race = parsed.race.iloc[0]
@@ -143,3 +199,65 @@ def test_import_logs_bad_pages_without_stopping(tmp_path: Path):
     assert summary.iloc[0]["errors"] >= 1
     errors = pd.read_csv(tmp_path / "historical_import_errors.csv")
     assert not errors.empty
+
+
+def test_parse_realistic_jra_result_with_16_runners_and_12_payouts():
+    parsed = parse_jra_result_html(complex_jra_html(), SAMPLE_URL)
+    race = parsed.race.iloc[0]
+    assert race["race_name"] == "欅ステークス"
+    assert race["race_name"] != "検索ウィンドウ"
+    assert len(parsed.runners) == 16
+    assert not parsed.runners["frame_no"].isna().any()
+    assert parsed.runners["frame_no"].tolist() == [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8]
+    assert len(parsed.payouts) == 12
+    counts = parsed.payouts["bet_type"].value_counts().to_dict()
+    assert counts == {
+        "place": 3,
+        "wide": 3,
+        "win": 1,
+        "bracket_quinella": 1,
+        "quinella": 1,
+        "exacta": 1,
+        "trio": 1,
+        "trifecta": 1,
+    }
+    win = parsed.payouts[parsed.payouts["bet_type"] == "win"].iloc[0]
+    exacta = parsed.payouts[parsed.payouts["bet_type"] == "exacta"].iloc[0]
+    assert win["payout_per_100"] == 1570
+    assert win["popularity"] == 7
+    assert exacta["payout_per_100"] == 7800
+    assert exacta["popularity"] == 31
+
+
+def test_realistic_jra_import_is_idempotent(tmp_path: Path):
+    index_url = "https://www.jra.go.jp/JRADB/accessS.html?CNAME=pw01sde0100"
+    pages = {
+        index_url: complex_jra_html(),
+        SAMPLE_URL: complex_jra_html(),
+    }
+
+    def fetch(url: str) -> str:
+        return pages.get(url, complex_jra_html())
+
+    first = import_recent_jra_races(
+        race_count=1,
+        output_dir=tmp_path,
+        seed_urls=[index_url],
+        fetch_html=fetch,
+        request_interval=0,
+        max_pages=5,
+    )
+    second = import_recent_jra_races(
+        race_count=1,
+        output_dir=tmp_path,
+        seed_urls=[index_url],
+        fetch_html=fetch,
+        request_interval=0,
+        max_pages=5,
+    )
+    assert first.iloc[0]["new_races"] == 1
+    assert first.iloc[0]["new_runner_rows"] == 16
+    assert first.iloc[0]["new_payout_rows"] == 12
+    assert second.iloc[0]["new_races"] == 0
+    assert second.iloc[0]["new_runner_rows"] == 0
+    assert second.iloc[0]["new_payout_rows"] == 0

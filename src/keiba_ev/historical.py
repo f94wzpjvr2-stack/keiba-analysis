@@ -104,6 +104,17 @@ _COURSE_RE = re.compile(
     r"コース：\s*([\d,]+)\s*メートル\s*（(芝|ダート|障害)・([^）]+)）"
 )
 
+_NAVIGATION_HEADINGS = {
+    "検索ウィンドウ",
+    "メニュー",
+    "ナビゲーション",
+    "レース結果",
+    "払戻金",
+    "勝馬の紹介",
+    "競走中の出来事等",
+    "開催選択へ戻る",
+}
+
 
 class HistoricalImportError(RuntimeError):
     """Raised when a JRA page cannot be parsed as a completed race result."""
@@ -132,6 +143,68 @@ def _flatten_columns(columns: Iterable[object]) -> list[str]:
         else:
             flattened.append(_clean_text(column))
     return flattened
+
+
+def _node_text(node) -> str:
+    parts: list[str] = []
+    text = _clean_text(node.get_text(" ", strip=True))
+    if text:
+        parts.append(text)
+    for child in node.find_all(True):
+        for attr in ("alt", "title", "aria-label"):
+            value = _clean_text(child.get(attr))
+            if value:
+                parts.append(value)
+        class_text = " ".join(child.get("class", []))
+        src_text = _clean_text(child.get("src"))
+        for value in (class_text, src_text):
+            match = re.search(r"(?:枠|waku|frame)[_-]?([1-8])", value, re.IGNORECASE)
+            if match:
+                parts.append(match.group(1))
+    return _clean_text(" ".join(parts))
+
+
+def _table_to_dataframe(table) -> pd.DataFrame:
+    grid: list[list[str]] = []
+    rowspans: dict[tuple[int, int], str] = {}
+    for row_index, row in enumerate(table.find_all("tr")):
+        values: list[str] = []
+        column_index = 0
+        while (row_index, column_index) in rowspans:
+            values.append(rowspans.pop((row_index, column_index)))
+            column_index += 1
+        for cell in row.find_all(["th", "td"]):
+            while (row_index, column_index) in rowspans:
+                values.append(rowspans.pop((row_index, column_index)))
+                column_index += 1
+            value = _node_text(cell)
+            rowspan = int(cell.get("rowspan", 1) or 1)
+            colspan = int(cell.get("colspan", 1) or 1)
+            for offset in range(colspan):
+                values.append(value)
+                if rowspan > 1:
+                    for extra_row in range(1, rowspan):
+                        rowspans[(row_index + extra_row, column_index + offset)] = value
+            column_index += colspan
+        while (row_index, column_index) in rowspans:
+            values.append(rowspans.pop((row_index, column_index)))
+            column_index += 1
+        if values:
+            grid.append(values)
+
+    if not grid:
+        return pd.DataFrame()
+    width = max(len(row) for row in grid)
+    normalized = [row + [""] * (width - len(row)) for row in grid]
+    header_index = 0
+    for index, row in enumerate(normalized):
+        compact = {re.sub(r"\s+", "", value) for value in row}
+        if "着順" in compact and "馬番" in compact and "馬名" in compact:
+            header_index = index
+            break
+    headers = _flatten_columns(normalized[header_index])
+    data = normalized[header_index + 1 :]
+    return pd.DataFrame(data, columns=headers)
 
 
 def _canonicalize_url(url: str) -> str:
@@ -167,6 +240,15 @@ def extract_jra_navigation_urls(page_html: str, current_url: str) -> list[str]:
 
 
 def _find_result_table(page_html: str) -> pd.DataFrame:
+    soup = BeautifulSoup(page_html, "html.parser")
+    for table_node in soup.find_all("table"):
+        table = _table_to_dataframe(table_node)
+        if table.empty:
+            continue
+        normalized = {re.sub(r"\s+", "", c): c for c in table.columns}
+        if "着順" in normalized and "馬番" in normalized and "馬名" in normalized:
+            return table
+
     try:
         tables = pd.read_html(StringIO(page_html))
     except ValueError as exc:
@@ -224,10 +306,16 @@ def _parse_metadata(soup: BeautifulSoup, source_url: str) -> dict[str, object]:
     race_name = ""
     for node in soup.find_all(["h2", "h3"]):
         candidate = _clean_text(node.get_text(" ", strip=True))
-        if candidate and candidate not in {"払戻金", "勝馬の紹介", "競走中の出来事等"}:
-            if "レース結果" not in candidate:
-                race_name = candidate
-                break
+        if not candidate:
+            continue
+        if candidate in _NAVIGATION_HEADINGS:
+            continue
+        if "検索ウィンドウ" in candidate or "レース結果" in candidate:
+            continue
+        if any(bet_type in candidate for bet_type in BET_TYPE_MAP):
+            continue
+        race_name = candidate
+        break
 
     course_match = _COURSE_RE.search(page_text)
     distance: object = pd.NA
@@ -335,53 +423,100 @@ def _looks_like_selection(text: str, bet_type: str) -> bool:
     return False
 
 
+def _normalize_token(text: str) -> str:
+    return (
+        _clean_text(text)
+        .replace("３", "3")
+        .replace("－", "-")
+        .replace("ー", "-")
+        .replace("–", "-")
+    )
+
+
+def _payout_section_tokens(soup: BeautifulSoup) -> list[str]:
+    tokens = [_normalize_token(line) for line in soup.get_text("\n", strip=True).splitlines()]
+    tokens = [token for token in tokens if token]
+    payout_indexes = [index for index, token in enumerate(tokens) if token == "払戻金"]
+    if not payout_indexes:
+        return tokens
+
+    best_section: list[str] = []
+    best_score = -1
+    for start_index in payout_indexes:
+        end_index = len(tokens)
+        for marker in ("勝馬の紹介", "競走中の出来事等", "開催選択へ戻る"):
+            try:
+                marker_index = tokens.index(marker, start_index + 1)
+                end_index = min(end_index, marker_index)
+            except ValueError:
+                pass
+        section = tokens[start_index + 1 : end_index]
+        bet_type_count = sum(1 for token in section if token in BET_TYPE_MAP)
+        payout_count = sum(1 for token in section if re.search(r"[\d,]+\s*円", token))
+        score = bet_type_count * 10 + payout_count
+        if score > best_score:
+            best_score = score
+            best_section = section
+    return best_section
+
+
+def _parse_payout_and_popularity(
+    tokens: Sequence[str],
+    start_index: int,
+) -> tuple[int | None, int | None, int]:
+    payout: int | None = None
+    popularity: int | None = None
+    pending_payout_number: str | None = None
+    pending_popularity_number: int | None = None
+    next_index = start_index
+
+    for index, token in enumerate(tokens[start_index : min(start_index + 10, len(tokens))], start_index):
+        next_index = index + 1
+        normalized = token.replace(" ", "")
+        if normalized in BET_TYPE_MAP:
+            next_index = index
+            break
+        payout_match = re.search(r"([\d,]+)円", normalized)
+        if payout_match and payout is None:
+            payout = int(payout_match.group(1).replace(",", ""))
+        elif payout is None and re.fullmatch(r"[\d,]+", normalized):
+            pending_payout_number = normalized
+        elif payout is None and normalized == "円" and pending_payout_number is not None:
+            payout = int(pending_payout_number.replace(",", ""))
+
+        popularity_match = re.search(r"(\d+)番人気", normalized)
+        if popularity_match:
+            popularity = int(popularity_match.group(1))
+            break
+        if re.fullmatch(r"\d+", normalized):
+            pending_popularity_number = int(normalized)
+        elif normalized == "番人気" and pending_popularity_number is not None:
+            popularity = pending_popularity_number
+            break
+
+    return payout, popularity, next_index
+
+
 def _parse_payouts(
     soup: BeautifulSoup,
     race_id: str,
     source_url: str,
     imported_at: str,
 ) -> pd.DataFrame:
-    lines = [_clean_text(line) for line in soup.get_text("\n", strip=True).splitlines()]
-    lines = [line for line in lines if line]
-    try:
-        start = lines.index("払戻金") + 1
-    except ValueError as exc:
-        raise HistoricalImportError("払戻金セクションがありません") from exc
-
-    end = len(lines)
-    for marker in ("勝馬の紹介", "競走中の出来事等", "開催選択へ戻る"):
-        try:
-            candidate = lines.index(marker, start)
-            end = min(end, candidate)
-        except ValueError:
-            pass
-    section = lines[start:end]
+    section = _payout_section_tokens(soup)
 
     rows: list[dict[str, object]] = []
     current_bet_type = ""
     index = 0
     while index < len(section):
-        line = section[index].replace("３", "3")
+        line = _normalize_token(section[index])
         if line in BET_TYPE_MAP:
             current_bet_type = BET_TYPE_MAP[line]
             index += 1
             continue
-        normalized_selection = line.replace("－", "-").replace("ー", "-")
+        normalized_selection = _normalize_token(line)
         if current_bet_type and _looks_like_selection(normalized_selection, current_bet_type):
-            payout: int | None = None
-            popularity: int | None = None
-            for lookahead in range(index + 1, min(index + 7, len(section))):
-                candidate = section[lookahead].replace(" ", "")
-                payout_match = re.fullmatch(r"([\d,]+)円", candidate)
-                if payout_match and payout is None:
-                    payout = int(payout_match.group(1).replace(",", ""))
-                    continue
-                popularity_match = re.fullmatch(r"(\d+)番人気", candidate)
-                if popularity_match:
-                    popularity = int(popularity_match.group(1))
-                    break
-                if section[lookahead].replace("３", "3") in BET_TYPE_MAP:
-                    break
+            payout, popularity, next_index = _parse_payout_and_popularity(section, index + 1)
             if payout is not None:
                 rows.append(
                     {
@@ -394,6 +529,8 @@ def _parse_payouts(
                         "imported_at": imported_at,
                     }
                 )
+                index = max(index + 1, next_index)
+                continue
         index += 1
 
     if not rows:
@@ -435,7 +572,7 @@ class JRAHistoricalClient:
         self,
         *,
         timeout: float = 20.0,
-        request_interval: float = 0.8,
+        request_interval: float = 2.0,
         session: requests.Session | None = None,
     ) -> None:
         self.timeout = timeout
@@ -554,7 +691,7 @@ def import_recent_jra_races(
     output_dir: str | Path,
     seed_urls: Sequence[str] | None = None,
     resume: bool = True,
-    request_interval: float = 0.8,
+    request_interval: float = 2.0,
     timeout: float = 20.0,
     max_pages: int | None = None,
     fetch_html: Callable[[str], str] | None = None,
