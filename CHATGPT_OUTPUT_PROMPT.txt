@@ -1,0 +1,15 @@
+競馬AI v2用のColab入力を作成してください。
+
+必須出力:
+1. race辞書
+2. horses_csv
+3. wide_odds_text
+4. quinella_odds_text
+5. trio_odds_text
+
+horses_csv列順:
+horse_no,horse_name,ability,suitability,pace,training,paddock,win_prob_input,win_odds
+
+不明情報は推測しない。
+オッズ画像に写る組み合わせだけ出力する。
+全てPythonコードとして出力する。

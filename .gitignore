@@ -2,8 +2,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.pyc
+*.egg-info/
 .venv/
 .env
 .ipynb_checkpoints/
 # Keep personal race data out of GitHub
 data/live/
+models/

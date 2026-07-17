@@ -86,6 +86,19 @@ python -m pytest -q
 ruff check .
 ```
 
+## keiba-ai v2
+
+`keiba_ai` パッケージは、履歴データが十分に集まった後に機械学習モデルを検証するための追加機能です。
+
+- Colab入口: `notebooks/keiba_ai_v2_colab.ipynb`
+- ChatGPT入力補助: `CHATGPT_OUTPUT_PROMPT.txt`
+- 学習スクリプト: `scripts/train_model.py`
+- 学習データ目安: 200行以上
+- 検証方法: 時系列分割のみ
+- 禁止事項: レース結果、払戻、ROIなどのレース後情報を予測特徴量に使わない
+
+通常運用は既存の `notebooks/keiba_colab.ipynb` を使い、v2は十分な記録が集まってから比較検証に使います。
+
 ## フォルダ構成
 
 ```text
@@ -98,6 +111,8 @@ keiba-hybrid-system-v1/
 ├── data/templates/
 ├── notebooks/keiba_colab.ipynb
 ├── scripts/check_project.py
+├── scripts/train_model.py
+├── src/keiba_ai/
 ├── src/keiba_ev/
 └── tests/
 ```
