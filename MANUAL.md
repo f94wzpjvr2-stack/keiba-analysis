@@ -145,7 +145,7 @@ python -m pytest -q を実行し、結果を報告してください。
 
 ### `ModuleNotFoundError: keiba_ev`
 
-Colabのインストールセルを再実行します。GitHubリポジトリ名が正しいか確認します。
+Colabのインストールセルを再実行します。GitHubリポジトリ名が正しいか確認します。続くセルで `PROJECT_DIR/src` が `sys.path` に追加されているか確認します。
 
 ### Git cloneに失敗
 
