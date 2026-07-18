@@ -121,3 +121,8 @@ keiba-hybrid-system-v1/
 
 `notebooks/historical_import_colab.ipynb` の1セルを実行すると、完了済みJRAレースをGoogle Driveへ保存します。保存先、項目、制約は `docs/HISTORICAL_IMPORT.md` を参照してください。予測前データとの混在を防ぐため、履歴は `historical_*.csv` に分離されます。
 
+## レース後の自動精算
+
+`notebooks/race_settlement_colab.ipynb` の1セルを実行すると、`bets.csv` にある未精算レースを公式結果ページと照合し、的中、払戻、利益、回収率を `results.csv` へ保存します。既存の発走前情報、予測時オッズ、推定確率、EV、購入額、`algorithm_version` は上書きしません。
+
+自動精算のエラーと実行ログは Google Drive の `keiba-ev-data/automation/` に保存されます。

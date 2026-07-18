@@ -1,1 +1,1 @@
-race_id,first,second,third,notes
+race_id,first,second,third,notes,bet_type,selection,stake,hit,payout_per_100,payout_amount,profit,race_total_stake,race_total_payout,race_profit,race_return_rate,settled_at,result_source_url,algorithm_version
